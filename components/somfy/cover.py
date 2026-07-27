@@ -31,6 +31,10 @@ async def to_code(config):
     cg.add_library("Preferences", None)
     cg.add_library(
         name="CC1101",
-        repository="https://github.com/Viproz/SmartRC-CC1101-Driver-Lib",
+        # Patched fork: fixes an uninitialized PA-table value in setPA() and
+        # a silently-dropped frequency carry in setMHZ() (both found via
+        # -Wmaybe-uninitialized / -Wtype-limits build warnings). See
+        # https://github.com/mbaciu/SmartRC-CC1101-Driver-Lib for details.
+        repository="https://github.com/mbaciu/SmartRC-CC1101-Driver-Lib",
         version=None
     )

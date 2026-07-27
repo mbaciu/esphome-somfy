@@ -196,7 +196,11 @@ public:
 
             int bytesToWrite = _min(_bufferQueue.size(), status & 0x0F);
 
-            if (status & 0x0F == 0x0F && state == 0) {
+            // `==` binds tighter than `&`, so the previous
+            // `status & 0x0F == 0x0F` actually evaluated as
+            // `status & (0x0F == 0x0F)` = `status & 1`, not the intended
+            // "are the low 4 bits all set" check.
+            if ((status & 0x0F) == 0x0F && state == 0) {
                 // Start of transmission, TX FIFO is supposed to be empty transmit 64 bytes
                 bytesToWrite = _min(_bufferQueue.size(), 64);
             }
@@ -250,9 +254,13 @@ public:
     {
         ::Preferences preferences;
         preferences.begin("SomfyCover", false);
-        const char* path = rtsDevice->getConfigFilename().c_str();
+        // Keep the String alive for both statements below -- the previous
+        // version took a `const char*` from a temporary String's .c_str()
+        // and used it two lines later, after the temporary (and its buffer)
+        // had already been destroyed. Undefined behavior, not just a warning.
+        String path = rtsDevice->getConfigFilename();
 
-        preferences.remove(path);
+        preferences.remove(path.c_str());
 
         ESP_LOGD("SomfyCover.h", "Deleted remote %i", remoteId);
         preferences.end();
