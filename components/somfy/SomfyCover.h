@@ -24,8 +24,40 @@ namespace somfy {
 // cmd 99 - Set the transmit pin to HIGH
 // cmd 100 - Set the transmit pin to LOW
 
-#define REMOTE_TX_PIN 2
+// REMOTE_TX_PIN is intentionally NOT redefined here (SomfyRts.h already
+// defines it, guarded by #ifndef). The old unguarded #define in this file
+// used to silently shadow any build-flag override -- but note it barely
+// matters either way: this pin is only ever set LOW once in SomfyRts::init()
+// and is never touched again. The actual TX path goes through the CC1101's
+// SPI FIFO (see loop() below), not a bit-banged GPIO.
 #define REMOTE_FIRST_ADDR 0x121311 // Starting number for remote indexes
+
+// Fallback pin defaults match the original project's wiring doc (Wemos D1
+// Mini / plain ESP32). Boards that don't expose these exact GPIOs (e.g. the
+// Seeed XIAO ESP32-S3, which has a much smaller pinout) MUST override them
+// via the top-level `somfy:` component config -- see __init__.py / cover.py.
+// Previously these were never set at all, which left the CC1101 driver's
+// globals at their zero-initialized default (GPIO0) on some cores, or at
+// whatever the driver's per-architecture #ifdef block guessed for a bare
+// "ESP32" target -- neither of which accounts for board-specific pinouts.
+#ifndef SOMFY_DEFAULT_SCK_PIN
+#define SOMFY_DEFAULT_SCK_PIN 18
+#endif
+#ifndef SOMFY_DEFAULT_MISO_PIN
+#define SOMFY_DEFAULT_MISO_PIN 19
+#endif
+#ifndef SOMFY_DEFAULT_MOSI_PIN
+#define SOMFY_DEFAULT_MOSI_PIN 23
+#endif
+#ifndef SOMFY_DEFAULT_CSN_PIN
+#define SOMFY_DEFAULT_CSN_PIN 5
+#endif
+#ifndef SOMFY_DEFAULT_GDO0_PIN
+#define SOMFY_DEFAULT_GDO0_PIN 2
+#endif
+#ifndef SOMFY_DEFAULT_GDO2_PIN
+#define SOMFY_DEFAULT_GDO2_PIN 4
+#endif
 
 class SomfyCover : public Component, public cover::Cover
 {
@@ -41,6 +73,28 @@ private:
 public:
     static ELECHOUSE_CC1101 cc1101;
     static std::queue<unsigned char> _bufferQueue;
+
+    // Radio pins, shared across every `cover: - platform: somfy` instance
+    // since they all talk to the same physical CC1101. Set once from the
+    // top-level `somfy:` component (see __init__.py) before any cover's
+    // setup() runs; the SOMFY_DEFAULT_* fallbacks above cover the case where
+    // no `somfy:` block is present at all.
+    static int sck_pin;
+    static int miso_pin;
+    static int mosi_pin;
+    static int csn_pin;
+    static int gdo0_pin;
+    static int gdo2_pin;
+
+    static void configureRadioPins(int sck, int miso, int mosi, int csn, int gdo0, int gdo2)
+    {
+        sck_pin = sck;
+        miso_pin = miso;
+        mosi_pin = mosi;
+        csn_pin = csn;
+        gdo0_pin = gdo0;
+        gdo2_pin = gdo2;
+    }
 
     void setCoverID(int coverID)
     {
@@ -73,6 +127,16 @@ public:
 
         rtsDevice->init();
 
+        // Must happen before cc1101.Init() -- the driver's SPI.begin() and
+        // GDO pinMode() calls read these globals at Init() time. This is the
+        // actual fix for board-specific wiring (see class members above):
+        // previously these were never called, so the driver always used
+        // either GPIO0 (uninitialized globals) or its Wemos-D1/plain-ESP32
+        // #ifdef default, regardless of what's actually wired on this board.
+        ESP_LOGD("SomfyCover.h", "Configuring CC1101 pins: SCK=%d MISO=%d MOSI=%d CSN=%d GDO0=%d GDO2=%d",
+                 sck_pin, miso_pin, mosi_pin, csn_pin, gdo0_pin, gdo2_pin);
+        cc1101.setSpiPin(sck_pin, miso_pin, mosi_pin, csn_pin);
+        cc1101.setGDO(gdo0_pin, gdo2_pin);
 
         if (cc1101.getCC1101()) {
             ESP_LOGD("SomfyCover.h", "Communication established with the CC1101 module");
@@ -348,6 +412,12 @@ public:
 
 ELECHOUSE_CC1101 SomfyCover::cc1101;
 std::queue<unsigned char> SomfyCover::_bufferQueue;
+int SomfyCover::sck_pin = SOMFY_DEFAULT_SCK_PIN;
+int SomfyCover::miso_pin = SOMFY_DEFAULT_MISO_PIN;
+int SomfyCover::mosi_pin = SOMFY_DEFAULT_MOSI_PIN;
+int SomfyCover::csn_pin = SOMFY_DEFAULT_CSN_PIN;
+int SomfyCover::gdo0_pin = SOMFY_DEFAULT_GDO0_PIN;
+int SomfyCover::gdo2_pin = SOMFY_DEFAULT_GDO2_PIN;
 
 
 }  // namespace somfy
