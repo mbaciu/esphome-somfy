@@ -1,7 +1,15 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.components import cover
 
 CODEOWNERS = ["@Viproz"]
+
+# Shared namespace/class declarations -- both cover.py (the `cover:` platform)
+# and button.py (the `button:` platform, for the debug/programming commands)
+# need to reference the same SomfyCover C++ class, so it's declared once here
+# rather than duplicated.
+somfy_ns = cg.esphome_ns.namespace("somfy")
+SomfyCover = somfy_ns.class_("SomfyCover", cover.Cover, cg.Component)
 
 # Top-level `somfy:` block. Configures the CC1101 radio pins shared by every
 # `cover: - platform: somfy` entry (they all talk to the same physical chip,

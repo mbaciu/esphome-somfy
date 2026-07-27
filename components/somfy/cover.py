@@ -4,12 +4,10 @@ from esphome.components import cover
 from esphome.const import (
     CONF_ID,
 )
+from . import somfy_ns, SomfyCover
 
 CONF_REMOTEID_KEY = 'RemoteID'
 CONF_INVERT_KEY = 'invert'
-
-somfy_ns = cg.esphome_ns.namespace("somfy")
-SomfyCover = somfy_ns.class_("SomfyCover", cover.Cover, cg.Component)
 
 CONFIG_SCHEMA = cover.cover_schema(SomfyCover).extend(
     {

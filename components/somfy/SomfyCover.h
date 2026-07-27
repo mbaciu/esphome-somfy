@@ -272,8 +272,108 @@ public:
         traits.set_is_assumed_state(false);
         traits.set_supports_position(true);
         traits.set_supports_stop(true); // Middle button of the remote
-        traits.set_supports_tilt(true); // to send other commands
+        // Debug/programming commands (program, delete rolling code, clear
+        // prefs, ...) used to be dispatched by dragging this cover's tilt
+        // slider to a specific number (11, 21, 61, ...). That put a
+        // one-mistap-away path to wiping a shade's pairing in the same UI
+        // control someone might nudge by accident. Those commands are now
+        // exposed as their own `button:` entities (see SomfyCommandButton.h
+        // and run_command() below) instead, so the tilt slider -- which
+        // this component never used for real tilt anyway -- is removed.
+        traits.set_supports_tilt(false);
         return traits;
+    }
+
+    // Debug/programming command dispatch, shared by every `button: -
+    // platform: somfy` entity pointed at this cover (see
+    // SomfyCommandButton::press_action()). See the cmd table comment near
+    // the top of this file.
+    void run_command(int xpos)
+    {
+        ::Preferences preferences;
+        bool success;
+        int ret;
+        ESP_LOGI("SomfyCover.h", "Command xpos: %d", xpos);
+
+        switch (xpos)
+        {
+        case 0:
+            ESP_LOGI("SomfyCover.h", "Current rolling code is %d.", rtsDevice->readRemoteRollingCode());
+            break;
+
+        case 11:
+            ESP_LOGI("SomfyCover.h", "Program mode");
+
+            rtsDevice->sendCommandProg();
+            break;
+
+        case 16:
+            ESP_LOGI("SomfyCover.h", "Program mode - grail");
+
+            rtsDevice->sendCommandProgGrail();
+            break;
+
+        case 21:
+            ESP_LOGI("SomfyCover.h", "Delete file");
+            delete_code();
+            break;
+
+        case 50:
+            ESP_LOGI("SomfyCover.h", "Long program mode");
+            rtsDevice->sendCommandProg(20);
+            break;
+
+        case 61:
+            ESP_LOGI("SomfyCover.h", "Clearing all values in Preference library");
+
+            nvs_flash_erase(); // erase the NVS partition and...
+            nvs_flash_init(); // initialize the NVS partition.
+
+            success = preferences.begin("SomfyCover", false);
+            if (success) {
+                ESP_LOGW("SomfyCover.h", "Begin success");
+            } else {
+                ESP_LOGI("SomfyCover.h", "Begin fail");
+            }
+
+            ret = preferences.putUShort("test", 20);
+            if (ret == 0) {
+                ESP_LOGW("SomfyCover.h", "Error while test-writing.");
+            } else {
+                ESP_LOGI("SomfyCover.h", "Memory write success.");
+            }
+
+            preferences.end();
+            break;
+
+        // Debug commands
+        case 90:
+            setup();
+            break;
+
+        case 97:
+            cc1101.SetTx();
+            break;
+
+        case 98:
+            cc1101.setSidle();
+            break;
+
+        case 99:
+            // Was hardcoded to pin 2 (the old Wemos-D1/plain-ESP32 GDO0
+            // default) regardless of what's actually configured -- on this
+            // board GDO0 is GPIO3, so this never touched the real TX pin.
+            // Use the configured gdo0_pin instead.
+            digitalWrite(gdo0_pin, HIGH);
+            break;
+
+        case 100:
+            digitalWrite(gdo0_pin, LOW);
+            break;
+
+        default:
+            break;
+        }
     }
 
     void control(const cover::CoverCall& call) override
@@ -327,93 +427,6 @@ public:
 
             rtsDevice->sendCommandStop();
 
-        }
-        else if (call.get_tilt().has_value()) {
-            // Tilt is only for debug/programation
-            auto tpos = *call.get_tilt();
-            int xpos = tpos * 100;
-            ::Preferences preferences;
-            bool success;
-            int ret;
-            ESP_LOGI("SomfyCover.h", "Command tilt xpos: %d", xpos);
-
-            switch (xpos)
-            {
-            case 0:
-                ESP_LOGI("SomfyCover.h", "Current rolling code is %d.", rtsDevice->readRemoteRollingCode());
-                break;
-
-            case 11:
-                ESP_LOGI("SomfyCover.h", "Program mode");
-
-                rtsDevice->sendCommandProg();
-                break;
-
-            case 16:
-                ESP_LOGI("SomfyCover.h", "Program mode - grail");
-
-                rtsDevice->sendCommandProgGrail();
-                break;
-
-            case 21:
-                ESP_LOGI("SomfyCover.h", "Delete file");
-                delete_code();
-                break;
-
-            case 50:
-                ESP_LOGI("SomfyCover.h", "Long program mode");
-                rtsDevice->sendCommandProg(20);
-                break;
-
-            case 61:
-                ESP_LOGI("SomfyCover.h", "Clearing all values in Preference library");
-
-                nvs_flash_erase(); // erase the NVS partition and...
-                nvs_flash_init(); // initialize the NVS partition.
-
-                success = preferences.begin("SomfyCover", false);
-                if (success) {
-                    ESP_LOGW("SomfyCover.h", "Begin success");
-                } else {
-                    ESP_LOGI("SomfyCover.h", "Begin fail");
-                }
-
-                ret = preferences.putUShort("test", 20);
-                if (ret == 0) {
-                    ESP_LOGW("SomfyCover.h", "Error while test-writing.");
-                } else {
-                    ESP_LOGI("SomfyCover.h", "Memory write success.");
-                }
-
-                preferences.end();
-                break;
-
-            // Debug commands
-            case 90:
-                setup();
-                break;
-
-            case 97:
-                cc1101.SetTx();
-                break;
-            
-            case 98:
-                cc1101.setSidle();
-                break;
-
-            case 99:
-                digitalWrite(2, HIGH);
-                break;
-
-            case 100:
-                digitalWrite(2, LOW);
-                break;
-            
-            default:
-                break;
-            }
-
-            // Don't publish
         }
     }
 };
